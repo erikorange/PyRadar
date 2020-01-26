@@ -2,121 +2,129 @@ import pygame
 import time
 import math
 
-def drawradius(lcd,xCenter,yCenter,angle):
-    lcd.fill((0,0,0))
-    pygame.draw.circle(lcd, (0,64,0), (xCenter,yCenter), 160, 1)
-    radar_len = 150
-    x = xCenter + math.cos(math.radians(angle)) * radar_len
-    y = yCenter + math.sin(math.radians(angle)) * radar_len
-    arrow(lcd, (0,64,0), (128,0,0), (xCenter, yCenter), (x,y), 7)
-    pygame.display.update()
+class Radar():
 
-def arrow(screen, lcolor, tricolor, start, end, trirad):
-    pygame.draw.line(screen,lcolor,start,end,2)
-    rotation = math.degrees(math.atan2(start[1]-end[1], end[0]-start[0]))+90
-    pygame.draw.polygon(screen, tricolor, ((end[0]+trirad*math.sin(math.radians(rotation)), end[1]+trirad*math.cos(math.radians(rotation))), (end[0]+trirad*math.sin(math.radians(rotation-120)), end[1]+trirad*math.cos(math.radians(rotation-120))), (end[0]+trirad*math.sin(math.radians(rotation+120)), end[1]+trirad*math.cos(math.radians(rotation+120)))))
+    def __init__(self):
+        pygame.init()
+        self.__lcd = pygame.display.set_mode((800,600))
+        pygame.mouse.set_visible(False)
 
-def circleXY(cX, cY, angle, radius):
-    x = cX + radius * math.cos(math.radians(angle))
-    y = cY + radius * math.sin(math.radians(angle))
-    return(int(x),int(y))
 
-def drawRadarLine(lcd,radarX,radarY,radarRadius,blipAngle,blipDistance,maxBlipDistance):
-    global radarAngle
-    global radarBlipGamma
-    global oldBlipAngle
-    global oldBlipDistance
+        self.__radarLineAngle=0
+        self.__radarBlipGamma=255
+        self.__oldpointAngle=0
+        self.__oldpointDistance=0
+        self.__compassPoints=[]
+        self.__crosshatchLines=[]
+        self.__concentricRadii=[]
+        self.__radarBox=None
+        self.__radarX = 0
+        self.__radarY = 0
+        self.__radarRadius = 0
 
-    radarColor=(0,50,0)
-    radarLineColor=(0,255,0)
+
+    def setup(self, radarX, radarY, radarRadius):
+        self.__radarX = radarX
+        self.__radarY = radarY
+        self.__radarRadius = radarRadius
+
+        #crosshatches
+        chAngle=0
+        for a in range(0, 4):
+            chAngle=a*45
+            self.__crosshatchLines.append([self.circleXY(self.__radarX, self.__radarY, chAngle, self.__radarRadius), self.circleXY(self.__radarX, self.__radarY, chAngle+180, self.__radarRadius)])
+        
+        #concentric circles
+        f=0.25
+        for a in range(0, 3):
+            self.__concentricRadii.append(int(self.__radarRadius*f))
+            f=f+0.25
+
+        #points on circumference
+        for a in range(0, 360):
+            lineEndX = self.__radarX + math.cos(math.radians(a)) * (self.__radarRadius-1)
+            lineEndY = self.__radarY + math.sin(math.radians(a)) * (self.__radarRadius-1)
+            self.__compassPoints.append((lineEndX, lineEndY))
+        
+        self.__radarBox=(self.__radarX-self.__radarRadius, self.__radarY-self.__radarRadius, self.__radarRadius*2, self.__radarRadius*2)
+
+
+    def update(self, pointAngle, pointDistance, maxDistance):
+        radarColor=(0,50,0)
+        radarLineColor=(0,255,0)
+        
+        #clear rectangle bounded by circle
+        pygame.draw.rect(self.__lcd, (0,0,0), self.__radarBox, 0)
+
+        #draw radar circle
+        pygame.draw.circle(self.__lcd, radarColor, (self.__radarX,self.__radarY), self.__radarRadius, 1)
+ 
+        #crosshatches
+        for a in range(0, len(self.__crosshatchLines)):
+            pygame.draw.line(self.__lcd, radarColor, self.__crosshatchLines[a][0], self.__crosshatchLines[a][1])
+       
+        # concentric circles
+        for a in range(0, len(self.__concentricRadii)):
+            pygame.draw.circle(self.__lcd, radarColor, (self.__radarX,self.__radarY), self.__concentricRadii[a], 1)
     
-    #clear rectangle bounded by circle
-    radarBox=(radarX-radarRadius, radarY-radarRadius, radarRadius*2, radarRadius*2)
-    pygame.draw.rect(lcd, (0,0,0), radarBox, 0)
+        #draw radar line
+        pygame.draw.line(self.__lcd, radarLineColor, (self.__radarX, self.__radarY), self.__compassPoints[self.__radarLineAngle], 3)
 
-    #draw radar circle
-    pygame.draw.circle(lcd, radarColor, (radarX,radarY), radarRadius, 1)
-    #crosshatches
-    chAngle=0
-    for a in range(0, 4):
-        chAngle=a*45
-        pygame.draw.line(lcd, radarColor, circleXY(radarX, radarY, chAngle, radarRadius), circleXY(radarX, radarY, chAngle+180, radarRadius))
+        #keep blip inside circle radius
+        if (pointDistance > maxDistance-6):
+            pointDistance = maxDistance-6
 
-    
-    # concentric circles
-    pygame.draw.circle(lcd, radarColor, (radarX,radarY), int(radarRadius*0.25), 1)
-    pygame.draw.circle(lcd, radarColor, (radarX,radarY), int(radarRadius*0.50), 1)
-    pygame.draw.circle(lcd, radarColor, (radarX,radarY), int(radarRadius*0.75), 1)
+        #transform blip distance proportionally from mileage to circle radius
+        blipRatio=maxDistance/self.__radarRadius
+        blipRadius=int(pointDistance/blipRatio)
 
+        #calculate blip (x,y)
+        blipX=blipRadius*math.cos(math.radians(pointAngle))
+        blipY=blipRadius*math.sin(math.radians(pointAngle))
 
-    #draw radar line
-    lineEndX = radarX + math.cos(math.radians(radarAngle)) * (radarRadius-1)
-    lineEndY = radarY + math.sin(math.radians(radarAngle)) * (radarRadius-1)
-    pygame.draw.line(lcd, radarLineColor, (radarX, radarY), (lineEndX,lineEndY), 3)
+        #transform the coordinates from Unit Circle to Mathematics Circle
+        plotX=blipY
+        plotY=-blipX
 
-    #keep blip inside circle radius
-    if (blipDistance > maxBlipDistance-6):
-        blipDistance = maxBlipDistance-6
+        #reset blip intensity if anything has changed
+        if ((pointDistance != self.__oldpointDistance) | (pointAngle != self.__oldpointAngle)):
+            self.__oldpointAngle = pointAngle
+            self.__oldpointDistance = pointDistance
+            self.__radarBlipGamma = 255
 
-    #transform blip distance proportionally from mileage to circle radius
-    blipRatio=maxBlipDistance/radarRadius
-    blipRadius=int(blipDistance/blipRatio)
+        #plot the blip
+        pygame.draw.circle(self.__lcd, (self.__radarBlipGamma, self.__radarBlipGamma,0), (self.__radarX+int(plotX),self.__radarY+int(plotY)), 2)
 
-    #calculate blip (x,y)
-    blipX=blipRadius*math.cos(math.radians(blipAngle))
-    blipY=blipRadius*math.sin(math.radians(blipAngle))
+        #fade the blip
+        self.__radarBlipGamma-=1
+        if (self.__radarBlipGamma < 75):
+            self.__radarBlipGamma = 75
 
-    #transform the coordinates from Unit Circle to Mathematics Circle
-    plotX=blipY
-    plotY=-blipX
+        #advance the radar arm
+        self.__radarLineAngle+=1
+        if (self.__radarLineAngle == 360):
+            self.__radarLineAngle=0
 
-    #reset blip intensity if anything has changed
-    if ((blipDistance != oldBlipDistance) | (blipAngle != oldBlipAngle)):
-        oldBlipAngle = blipAngle
-        oldBlipDistance = blipDistance
-        radarBlipGamma = 255
+        pygame.display.update(self.__radarBox)
+        clock = pygame.time.Clock()
+        clock.tick(200)
 
-    #plot the blip
-    pygame.draw.circle(lcd, (radarBlipGamma, radarBlipGamma,0), (radarX+int(plotX),radarY+int(plotY)), 3)
+    def circleXY(self, cX, cY, angle, radius):
+        x = cX + radius * math.cos(math.radians(angle))
+        y = cY + radius * math.sin(math.radians(angle))
+        return(int(x),int(y))
 
-    #csFont= pygame.font.SysFont("Arial", 12)
-    #txt = csFont.render(callsign, 1, (255,255,0))
-    #lcd.blit(txt, (radarX+int(plotX)-23,radarY+int(plotY)-20))
+    def drawradius(self, xCenter,yCenter,angle):
+        self.__lcd.fill((0,0,0))
+        pygame.draw.circle(self.__lcd, (0,64,0), (xCenter,yCenter), 160, 1)
+        radar_len = 150
+        x = xCenter + math.cos(math.radians(angle)) * radar_len
+        y = yCenter + math.sin(math.radians(angle)) * radar_len
+        self.arrow(self.__lcd, (0,64,0), (128,0,0), (xCenter, yCenter), (x,y), 7)
+        pygame.display.update()
 
-    #fade the blip
-    radarBlipGamma-=(0.20)
-    if (radarBlipGamma < 75):
-        radarBlipGamma = 75
-
-    #advance the radar arm
-    radarAngle+=0.25
-    if (radarAngle == 360):
-        radarAngle=1
-
-    pygame.display.flip()
-
-
-pygame.init()
-# set display size
-lcd = pygame.display.set_mode((800,600))
-pygame.mouse.set_visible(False)
-
-planeAngle=45
-planeDistance=35
-maxPlaneDistance=80
-
-radarAngle=0
-radarBlipGamma=255
-oldBlipAngle=0
-oldBlipDistance=0
-
-
-idx=0
-while True:
-    drawRadarLine(lcd,200,150,80,planeAngle,planeDistance,maxPlaneDistance)
-    idx+=1
-    if (idx % 1000 == 0):
-        planeDistance+=5
-        planeAngle-=3
-
+    def arrow(self, lcolor, tricolor, start, end, trirad):
+        pygame.draw.line(self.__lcd,lcolor,start,end,2)
+        rotation = math.degrees(math.atan2(start[1]-end[1], end[0]-start[0]))+90
+        pygame.draw.polygon(self.__lcd, tricolor, ((end[0]+trirad*math.sin(math.radians(rotation)), end[1]+trirad*math.cos(math.radians(rotation))), (end[0]+trirad*math.sin(math.radians(rotation-120)), end[1]+trirad*math.cos(math.radians(rotation-120))), (end[0]+trirad*math.sin(math.radians(rotation+120)), end[1]+trirad*math.cos(math.radians(rotation+120)))))
 
